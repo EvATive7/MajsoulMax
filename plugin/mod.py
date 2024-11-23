@@ -10,7 +10,9 @@ from .update_liqi import get_version
 
 class mod:
     def __init__(self):
-        self.safe = {}
+        self.safe = {
+            "account_id": 000000000
+        }
         self.yaml = YAML()
         self.LoadSettings()
         logger.success('已载入mod')
@@ -50,7 +52,7 @@ resource:
 mod: {}
 ''')
         try:
-            with open('./config/settings.mod.yaml', 'r', encoding='utf-8') as f:
+            with open(f'./config/settings.mod.{self.safe["account_id"]}.yaml', 'r', encoding='utf-8') as f:
                 temp = YAML()
                 localyaml = temp.load(f)
                 for i in self.settings.keys():
@@ -60,7 +62,7 @@ mod: {}
                                 self.settings[i][j] = localyaml[i][j]
         except:
             logger.warning(
-                '未检测到mod配置文件，已生成默认配置，如需自定义mod配置请手动修改 ./config/settings.mod.yaml')
+                f'未检测到mod配置文件，已生成默认配置，如需自定义mod配置请手动修改 ./config/settings.mod.{self.safe["account_id"]}.yaml')
         if self.settings['resource']['auto_update']:
             logger.info('正在检测lqc.lqbin文件更新，请稍候……')
             try:
@@ -72,7 +74,7 @@ mod: {}
         self.SaveSettings()
 
     def SaveSettings(self):
-        with open('./config/settings.mod.yaml', 'w', encoding='utf-8') as f:
+        with open(f'./config/settings.mod.{self.safe["account_id"]}.yaml', 'w', encoding='utf-8') as f:
             self.yaml.dump(self.settings, f)
 
     def get_prefix(self, version):
@@ -388,6 +390,7 @@ mod: {}
                         self.safe['skin'] = data.account.avatar_id
                         self.safe['title'] = data.account.title
                         self.safe['loading_image'] = data.account.loading_image
+                        self.LoadSettings()
                         # START
                         if self.settings['config']['character'] in self.settings['config']['characters'].keys():
                             data.account.avatar_id = self.settings['config'][
