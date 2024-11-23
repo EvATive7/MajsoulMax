@@ -1,9 +1,39 @@
 from ruamel.yaml import YAML
 from loguru import logger
 from base64 import b64decode
-import requests
 from google.protobuf.json_format import MessageToDict
 from proto import liqi_pb2 as pb
+import asyncio
+import websockets
+import threading
+import json
+
+
+messagetosend = []
+
+
+def start_websocket_server(port):
+    async def send_on_demand(websocket):
+        try:
+            while True:
+                if messagetosend:
+                    message = messagetosend.pop(0)
+                    await websocket.send(json.dumps(message, ensure_ascii=True))
+                else:
+                    await asyncio.sleep(0.1)
+        except websockets.exceptions.ConnectionClosed as e:
+            print("disconnected", e)
+    async def run_server():
+        try:
+            server = await websockets.serve(send_on_demand, '0.0.0.0', port)
+            await server.wait_closed()
+        except Exception as e:
+            logger.error(f'failed to start ws: {e}')
+    asyncio.run(run_server())
+
+
+def send_message(message):
+    messagetosend.append(message)
 
 
 class helper:
@@ -41,12 +71,14 @@ class helper:
             "ActionNewCard",
             "ActionGangResultEnd"
         ]  # '.lq.ActionPrototype'中，需要发送给小助手的action
+        self.thread = threading.Thread(target=start_websocket_server, daemon=True, args=(self.settings['config']['port'],))
+        self.thread.start()
         logger.success('已载入helper')
 
     def LoadSettings(self):
         self.settings = self.yaml.load('''\
 config:
-  api_url: 'https://localhost:12121/' # 小助手的地址
+  port: 12121
 ''')
 
         try:
@@ -92,9 +124,7 @@ config:
             else:
                 data = result['data']
             logger.success(f'[helper] 已发送：{data}')
-            requests.post(self.settings['config']
-                          ['api_url'], json=data, verify=False)
+            send_message(data)
             if 'liqi' in data.keys():  # 补发立直消息
                 logger.success(f'[helper] 已发送：{data["liqi"]}')
-                requests.post(self.settings['config']['api_url'],
-                              json=data['liqi'], verify=False)
+                send_message(data['liqi'])

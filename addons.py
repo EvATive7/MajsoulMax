@@ -103,7 +103,7 @@ class WebSocketAddon:
                     logger.info(f'接收到：{result}')
                 if HELPER_ENABLE:
                     # 如果启用helper，就把消息丢进helper里
-                    threading.Thread(target=helper_plugin.main, args=(result, )).start()
+                    helper_plugin.main(result)
             else:
                 if MOD_ENABLE and modify:
                     logger.success(f'已发送(modify)：{result}')
