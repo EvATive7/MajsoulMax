@@ -25,7 +25,7 @@ def start_websocket_server(port):
             print("disconnected", e)
     async def run_server():
         try:
-            server = await websockets.serve(send_on_demand, '0.0.0.0', port)
+            server = await websockets.serve(send_on_demand, None, port)
             await server.wait_closed()
         except Exception as e:
             logger.error(f'failed to start ws: {e}')
