@@ -61,6 +61,39 @@ mod: {}
                             if j in localyaml[i].keys():
                                 self.settings[i][j] = localyaml[i][j]
         except:
+            self.settings = self.yaml.load('''\
+# 需要自定义的配置主要集中在这里，大多数无需修改，在游戏内设置即可更新
+config:
+  character: 200001  # 当前看板娘
+  characters: {}  # 各角色使用的皮肤
+  nickname: '' # 自定义你的名字
+  star_chars: [] # 星标角色
+  bianjietishi: false # 强制启用便捷提示，用于部分场没有宝牌指示、和牌指示等
+  title: 0  # 当前使用的称号
+  loading_image: [] # 加载CG
+  emoji: false # 不建议开启，用于解锁角色全部emoji，如果你本身角色没有额外表情，在对局中却发送额外表情，这种行为相当于自爆卡车
+  views: # 各装扮页的装扮
+    0: []
+    1: []
+    2: []
+    3: []
+    4: []
+    5: []
+    6: []
+    7: []
+    8: []
+    9: []
+  views_index: 0 # 正在使用的装扮页
+  show_server: true # 显示其他玩家所在服务器
+  verified: 0 # 标识设置，0为无标识，1为主播标识，2为Pro标识，显示在名字后面
+  anti_replace_nickname: true # 禁止将外服玩家设为默认名称，特殊时期必备
+# 资源文件lqc.lqbin的配置                            
+resource:
+  auto_update: true # 自动更新lqc.lqbin
+  lqc_lqbin_version: 'v0.11.56.w' # lqc.lqbin文件版本
+# 下面是游戏的资源文件内容，包括需要获得的角色、物品等，不需要修改，除非你要自定义
+mod: {}
+''')
             logger.warning(
                 f'未检测到mod配置文件，已生成默认配置，如需自定义mod配置请手动修改 ./config/settings.mod.{self.safe["account_id"]}.yaml')
         if self.settings['resource']['auto_update']:
