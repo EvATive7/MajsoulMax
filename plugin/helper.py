@@ -2,6 +2,9 @@ from ruamel.yaml import YAML
 from loguru import logger
 from base64 import b64decode
 from google.protobuf.json_format import MessageToDict
+import websockets.asyncio
+import websockets.asyncio.server
+import websockets.connection
 from proto import liqi_pb2 as pb
 import asyncio
 import websockets
@@ -9,20 +12,28 @@ import threading
 import json
 
 
-messagetosend = []
+messagetosend = [] # 其实应该加个锁，多ws时没全读完就别pop
+websocket_established = False
 
 
 def start_websocket_server(port):
-    async def send_on_demand(websocket):
+    async def send_on_demand(websocket: websockets.asyncio.server.ServerConnection):
+        global websocket_established
         try:
+            websocket_established = True
             while True:
+                websocket_established = websocket.close_code == None
+                if not websocket_established:
+                    messagetosend.clear()
+                    break
                 if messagetosend:
                     message = messagetosend.pop(0)
                     await websocket.send(json.dumps(message, ensure_ascii=True))
-                else:
-                    await asyncio.sleep(0.1)
+                await asyncio.sleep(0.1)
         except websockets.exceptions.ConnectionClosed as e:
-            print("disconnected", e)
+            messagetosend.clear()
+            websocket_established = False
+
     async def run_server():
         try:
             server = await websockets.serve(send_on_demand, None, port)
@@ -33,7 +44,8 @@ def start_websocket_server(port):
 
 
 def send_message(message):
-    messagetosend.append(message)
+    if websocket_established:
+        messagetosend.append(message)
 
 
 class helper:
