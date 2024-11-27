@@ -50,7 +50,9 @@ logger.success(
     启用helper：{HELPER_ENABLE}\n
     ''')
 if MOD_ENABLE:
-    mod_plugin = mod.mod()
+    mods_ls:dict[str, mod.mod] = {}
+    mod.mod.load_global_setting()
+    mod.mod.try_update_resource()
 if HELPER_ENABLE:
     helper_plugin = helper.helper()
 liqi_proto = liqi_new.LiqiProto()
@@ -71,7 +73,11 @@ class WebSocketAddon:
                 logger.debug(f'已发送（未解析）：{message.content}')
             return
         # 解析proto消息
-        if MOD_ENABLE:
+        if MOD_ENABLE: 
+            mod_plugin = mods_ls.get(flow.client_conn.id)
+            if not mod_plugin:
+                mod_plugin = mods_ls[flow.client_conn.id] = mod.mod()
+            account_id = mod_plugin.safe['account_id']
             # 如果启用mod，就把消息丢进mod里
             if not message.injected:
                 modify, drop, msg, inject, inject_msg = mod_plugin.main(
@@ -88,27 +94,27 @@ class WebSocketAddon:
             result = liqi_proto.parse(message)
         except:
             if message.from_client is False:
-                logger.error(f'接收到(error):{message.content}')
+                logger.error(f'[{account_id}] 接收到(error):{message.content}')
             else:
-                logger.error(f'已发送(error):{message.content}')
+                logger.error(f'[{account_id}] 已发送(error):{message.content}')
         else:
             if message.from_client is False:
                 if message.injected:
-                    logger.success(f'接收到(injected)：{result}')
+                    logger.success(f'[{account_id}] 接收到(injected)：{result}')
                 elif MOD_ENABLE and modify:
-                    logger.success(f'接收到(modify)：{result}')
+                    logger.success(f'[{account_id}] 接收到(modify)：{result}')
                 elif MOD_ENABLE and drop:
-                    logger.success(f'接收到(drop)：{result}')
+                    logger.success(f'[{account_id}] 接收到(drop)：{result}')
                 else:
-                    logger.info(f'接收到：{result}')
+                    logger.info(f'[{account_id}] 接收到：{result}')
                 if HELPER_ENABLE:
                     # 如果启用helper，就把消息丢进helper里
                     helper_plugin.main(result)
             else:
                 if MOD_ENABLE and modify:
-                    logger.success(f'已发送(modify)：{result}')
+                    logger.success(f'[{account_id}] 已发送(modify)：{result}')
                 else:
-                    logger.info(f'已发送：{result}')
+                    logger.info(f'[{account_id}] 已发送：{result}')
 
 
 addons = [

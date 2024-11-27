@@ -9,6 +9,70 @@ from .update_liqi import get_version
 
 
 class mod:
+    global_setting = None
+
+    @classmethod
+    def get_prefix(cls, version):
+        req = requests.get(
+            f'https://game.maj-soul.com/1/resversion{version}.json', timeout=10)
+        return req.json()['res']['res/config/lqc.lqbin']['prefix']
+
+    @classmethod
+    def get_lqc_lqbin(cls, prefix):
+        req = requests.get(
+            f'https://game.maj-soul.com/1/{prefix}/res/config/lqc.lqbin', timeout=10)
+        return req.content
+
+    @classmethod
+    def load_global_setting(cls):
+        cls.global_setting = YAML().load('''\
+# 资源文件lqc.lqbin的配置                            
+resource:
+  auto_update: true # 自动更新lqc.lqbin
+  lqc_lqbin_version: 'v0.11.56.w' # lqc.lqbin文件版本
+''')
+        try:
+            with open(f'./config/settings.mod.yaml', 'r', encoding='utf-8') as f:
+                temp = YAML()
+                localyaml = temp.load(f)
+                for i in cls.global_setting.keys():
+                    if i in localyaml.keys():
+                        for j in cls.global_setting[i]:
+                            if j in localyaml[i].keys():
+                                cls.global_setting[i][j] = localyaml[i][j]
+        except:
+            pass
+        cls.save_global_setting()
+
+    @classmethod
+    def save_global_setting(cls):
+        with open(f'./config/settings.mod.yaml', 'w', encoding='utf-8') as f:
+            YAML().dump(cls.global_setting, f)
+
+    @classmethod
+    def try_update_resource(cls):
+        if cls.global_setting['resource']['auto_update']:
+            logger.info('正在检测lqc.lqbin文件更新，请稍候……')
+            try:
+                # 获取资源文件版本
+                new_version = get_version()
+
+                prefix = mod.get_prefix(new_version['version'])
+
+                # 校验版本是否相同
+                if cls.global_setting['resource']['lqc_lqbin_version'] == prefix:
+                    logger.success(f'lqc.lqbin文件无需更新，当前版本：{prefix}')
+                else:
+                    # 更新lqc.lqbin
+                    lqc_lqbin = mod.get_lqc_lqbin(prefix)
+                    with open('proto/lqc.lqbin', 'wb') as f:
+                        f.write(lqc_lqbin)
+                    cls.global_setting['resource']['lqc_lqbin_version'] = prefix
+                    logger.success(f'lqc.lqbin文件更新成功：{prefix}')
+            except:
+                logger.critical('更新lqc.lqbin文件失败！可能会导致角色和物品不全！')
+        mod.save_global_setting()
+
     def __init__(self):
         self.safe = {
             "account_id": 000000000
@@ -44,10 +108,6 @@ config:
   show_server: true # 显示其他玩家所在服务器
   verified: 0 # 标识设置，0为无标识，1为主播标识，2为Pro标识，显示在名字后面
   anti_replace_nickname: true # 禁止将外服玩家设为默认名称，特殊时期必备
-# 资源文件lqc.lqbin的配置                            
-resource:
-  auto_update: true # 自动更新lqc.lqbin
-  lqc_lqbin_version: 'v0.11.56.w' # lqc.lqbin文件版本
 # 下面是游戏的资源文件内容，包括需要获得的角色、物品等，不需要修改，除非你要自定义
 mod: {}
 ''')
@@ -61,47 +121,8 @@ mod: {}
                             if j in localyaml[i].keys():
                                 self.settings[i][j] = localyaml[i][j]
         except:
-            self.settings = self.yaml.load('''\
-# 需要自定义的配置主要集中在这里，大多数无需修改，在游戏内设置即可更新
-config:
-  character: 200001  # 当前看板娘
-  characters: {}  # 各角色使用的皮肤
-  nickname: '' # 自定义你的名字
-  star_chars: [] # 星标角色
-  bianjietishi: false # 强制启用便捷提示，用于部分场没有宝牌指示、和牌指示等
-  title: 0  # 当前使用的称号
-  loading_image: [] # 加载CG
-  emoji: false # 不建议开启，用于解锁角色全部emoji，如果你本身角色没有额外表情，在对局中却发送额外表情，这种行为相当于自爆卡车
-  views: # 各装扮页的装扮
-    0: []
-    1: []
-    2: []
-    3: []
-    4: []
-    5: []
-    6: []
-    7: []
-    8: []
-    9: []
-  views_index: 0 # 正在使用的装扮页
-  show_server: true # 显示其他玩家所在服务器
-  verified: 0 # 标识设置，0为无标识，1为主播标识，2为Pro标识，显示在名字后面
-  anti_replace_nickname: true # 禁止将外服玩家设为默认名称，特殊时期必备
-# 资源文件lqc.lqbin的配置                            
-resource:
-  auto_update: true # 自动更新lqc.lqbin
-  lqc_lqbin_version: 'v0.11.56.w' # lqc.lqbin文件版本
-# 下面是游戏的资源文件内容，包括需要获得的角色、物品等，不需要修改，除非你要自定义
-mod: {}
-''')
             logger.warning(
                 f'未检测到mod配置文件，已生成默认配置，如需自定义mod配置请手动修改 ./config/settings.mod.{self.safe["account_id"]}.yaml')
-        if self.settings['resource']['auto_update']:
-            logger.info('正在检测lqc.lqbin文件更新，请稍候……')
-            try:
-                self.update_resource()
-            except:
-                logger.critical('更新lqc.lqbin文件失败！可能会导致角色和物品不全！')
         with open('./proto/lqc.lqbin', 'rb') as f:
             self.load_lqc_lqbin(f.read())
         self.SaveSettings()
@@ -109,16 +130,6 @@ mod: {}
     def SaveSettings(self):
         with open(f'./config/settings.mod.{self.safe["account_id"]}.yaml', 'w', encoding='utf-8') as f:
             self.yaml.dump(self.settings, f)
-
-    def get_prefix(self, version):
-        req = requests.get(
-            f'https://game.maj-soul.com/1/resversion{version}.json', timeout=10)
-        return req.json()['res']['res/config/lqc.lqbin']['prefix']
-
-    def get_lqc_lqbin(self, prefix):
-        req = requests.get(
-            f'https://game.maj-soul.com/1/{prefix}/res/config/lqc.lqbin', timeout=10)
-        return req.content
 
     def load_lqc_lqbin(self, lqc_lqbin):
         config_table = config_pb2.ConfigTables()
@@ -189,23 +200,6 @@ mod: {}
                         pb.ParseFromString(item)
                         self.settings['mod']['endings'].append(pb.id)
 
-    def update_resource(self):
-        # 获取资源文件版本
-        new_version = get_version()
-
-        prefix = self.get_prefix(new_version['version'])
-
-        # 校验版本是否相同
-        if self.settings['resource']['lqc_lqbin_version'] == prefix:
-            logger.success(f'lqc.lqbin文件无需更新，当前版本：{prefix}')
-        else:
-            # 更新lqc.lqbin
-            lqc_lqbin = self.get_lqc_lqbin(prefix)
-            with open('proto/lqc.lqbin', 'wb') as f:
-                f.write(lqc_lqbin)
-            self.settings['resource']['lqc_lqbin_version'] = prefix
-            logger.success(f'lqc.lqbin文件更新成功：{prefix}')
-
     def main(self, message, liqi_proto):
         modify = False
         drop = False
@@ -238,7 +232,7 @@ mod: {}
                                 p.nickname = self.settings['config']['nickname']
                             p.title = self.settings['config']['title']
                         if self.settings['config']['show_server']:
-                            p.nickname =self.get_zone_id(p.account_id)+p.nickname
+                            p.nickname = self.get_zone_id(p.account_id)+p.nickname
                     for p in data.update_list:
                         if p.account_id == self.safe['account_id']:
                             p.avatar_id = self.settings['config']['characters'][self.settings['config']['character']]
@@ -246,7 +240,7 @@ mod: {}
                                 p.nickname = self.settings['config']['nickname']
                             p.title = self.settings['config']['title']
                         if self.settings['config']['show_server']:
-                            p.nickname =self.get_zone_id(p.account_id)+p.nickname
+                            p.nickname = self.get_zone_id(p.account_id)+p.nickname
                 case '.lq.NotifyGameFinishRewardV2':
                     modify = True
                     data = liqi_pb2.NotifyGameFinishRewardV2()
@@ -265,7 +259,7 @@ mod: {}
                         data = liqi_pb2.NotifyCustomContestSystemMsg()
                         data.ParseFromString(msg_block.data)
                         for p in data.game_start.players:
-                            p.nickname =self.get_zone_id(p.account_id)+p.nickname
+                            p.nickname = self.get_zone_id(p.account_id)+p.nickname
         else:
             msg_id = unpack('<H', buf[1:3])[0]
             msg_block.ParseFromString(buf[3:])
@@ -358,8 +352,6 @@ mod: {}
                             fake = True
                     case '.lq.Lobby.receiveCharacterRewards':
                         fake = True
-
-
 
                 if fake:
                     modify = True
@@ -468,22 +460,22 @@ mod: {}
                                     json_format.ParseDict(view, view_slot)
                                 p.verified = self.settings['config']['verified']
                             if self.settings['config']['show_server']:
-                                p.nickname =self.get_zone_id(p.account_id)+p.nickname
+                                p.nickname = self.get_zone_id(p.account_id)+p.nickname
                     case '.lq.FastTest.authGame':  # 进入麻将桌
                         modify = True
                         data = liqi_pb2.ResAuthGame()
                         data.ParseFromString(msg_block.data)
                         if self.settings['config']['bianjietishi']:
                             data.game_config.mode.detail_rule.bianjietishi = True
-                            if data.game_config.meta.mode_id == 15 :
-                                data.game_config.meta.mode_id =11
+                            if data.game_config.meta.mode_id == 15:
+                                data.game_config.meta.mode_id = 11
                             elif data.game_config.meta.mode_id == 16:
-                                data.game_config.meta.mode_id =12
+                                data.game_config.meta.mode_id = 12
                             elif data.game_config.meta.mode_id == 25:
-                                data.game_config.meta.mode_id =23
+                                data.game_config.meta.mode_id = 23
                             elif data.game_config.meta.mode_id == 26:
-                                data.game_config.meta.mode_id =24
-                    
+                                data.game_config.meta.mode_id = 24
+
                         for p in data.players:
                             p.character.level = 5
                             p.character.is_upgraded = True
@@ -509,7 +501,7 @@ mod: {}
                                 p.verified = self.settings['config']['verified']
 
                             if self.settings['config']['show_server']:
-                                p.nickname =self.get_zone_id(p.account_id)+p.nickname
+                                p.nickname = self.get_zone_id(p.account_id)+p.nickname
                     case '.lq.Lobby.fetchAccountInfo':  # 个人信息页和游戏结束
                         data = liqi_pb2.ResAccountInfo()
                         data.ParseFromString(msg_block.data)
@@ -571,7 +563,7 @@ mod: {}
                                     json_format.ParseDict(view, view_slot)
                                 p.verified = self.settings['config']['verified']
                             if self.settings['config']['show_server']:
-                                p.nickname =self.get_zone_id(p.account_id)+p.nickname
+                                p.nickname = self.get_zone_id(p.account_id)+p.nickname
                     case '.lq.Lobby.fetchBagInfo':  # 获取背包
                         modify = True
                         data = liqi_pb2.ResBagInfo()
@@ -625,7 +617,7 @@ mod: {}
                         modify = True
                         data = liqi_pb2.ResFetchInfo()
                         data.ParseFromString(msg_block.data)
-                        
+
                         # 处理角色和皮肤
                         self.safe['main_character_id'] = data.character_info.main_character_id
                         self.safe['characters'] = data.character_info.characters
@@ -706,12 +698,12 @@ mod: {}
                         result = '发现读入牌谱！\n'
                         for account in data.head.accounts:
                             if account.account_id == self.safe['account_id']:
-                                result+='（自己）'
+                                result += '（自己）'
                             result += f'{self.get_zone_id(account.account_id)}{account.nickname}\n\
 账号id: {account.account_id}   加好友id: {self.encode_account_id2(account.account_id)}\n\
 主视角牌谱链接: {uuid}_a{self.encode_account_id(account.account_id)}\n\
 主视角牌谱链接（匿名）: {self.encodePaipuUUID(uuid)}_a{self.encode_account_id(account.account_id)}_2\n\n'
-                        result+='注意：只有在同一服务器才能添加好友！'
+                        result += '注意：只有在同一服务器才能添加好友！'
                         logger.success(result)
 
             else:
@@ -726,7 +718,7 @@ mod: {}
 
         return modify, drop, msg, inject, inject_msg
 
-    def get_zone_id(self, id:int):
+    def get_zone_id(self, id: int):
         i = id >> 23
         if 0 <= i <= 6:
             return '[C' + b'\xef\xbb\xbf'.decode('utf-8') + 'N]'
@@ -736,31 +728,33 @@ mod: {}
             return '[EN]'
         else:
             return '[??]'
-    def encodePaipuUUID(self,uuid) :
+
+    def encodePaipuUUID(self, uuid):
         result = ''
-        code0=ord('0')
-        codeA=ord('a')
-        for i,char in enumerate(uuid):
+        code0 = ord('0')
+        codeA = ord('a')
+        for i, char in enumerate(uuid):
             code = ord(char)
             temp = -1
-            if code >= code0 and code0+ 10 > code :
+            if code >= code0 and code0 + 10 > code:
                 temp = code - code0
             elif code >= codeA and codeA + 26 > code:
-                temp= code - codeA + 10
+                temp = code - codeA + 10
             if -1 != temp:
                 temp = (temp + 17 + i) % 36
                 if 10 > temp:
                     result += chr(temp + code0)
                 else:
-                    result +=  chr(temp + codeA - 10)
-                
+                    result += chr(temp + codeA - 10)
+
             else:
                 result += char
         return result
-    def encode_account_id(self,id:int) :
-            return int((7 * id + 1117113 ^ 86216345) + 1358437)
-        
-    def encode_account_id2(self,p:int):
+
+    def encode_account_id(self, id: int):
+        return int((7 * id + 1117113 ^ 86216345) + 1358437)
+
+    def encode_account_id2(self, p: int):
         p = 6139246 ^ p
         H = 67108863
         S = p & ~H
@@ -768,4 +762,3 @@ mod: {}
         for i in range(5):
             Z = (511 & Z) << 17 | Z >> 9
         return int(Z + S + 1e7)
-    
