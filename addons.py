@@ -6,6 +6,7 @@ from ruamel.yaml import YAML
 from sys import stdout
 from plugin import update_liqi
 import threading
+import time
 
 logger.remove()
 logger.add(stdout, colorize=True,
@@ -49,18 +50,29 @@ logger.success(
     启用mod: {MOD_ENABLE}\n
     启用helper：{HELPER_ENABLE}\n
     ''')
-if MOD_ENABLE:
-    mods_ls:dict[str, mod.mod] = {}
-    mod.mod.load_global_setting()
-    mod.mod.try_update_resource()
+games: list[dict] = []
+mod_plugins: list[mod.mod] = []
+mod.mod.load_global_setting()
+mod.mod.try_update_resource()
+def get_mod_plugin(connid):
+    return [_m for _m in mod_plugins if _m.wsid == connid][0]
 if HELPER_ENABLE:
-    helper_plugin = helper.helper()
+    helper_plugin = helper.helper(mod_plugins)
 liqi_proto = liqi_new.LiqiProto()
-if not (MOD_ENABLE or HELPER_ENABLE):
-    logger.warning('请注意，当前没有开启任何功能，请修改./config/settings.yaml文件并重新启动！')
 
 
 class WebSocketAddon:
+    def websocket_start(self, flow: http.HTTPFlow):
+        mod_plugin = mod.mod()
+        mod_plugin.established = int(time.time())
+        mod_plugin.wsid = flow.id
+        mod_plugins.append(mod_plugin)
+
+    def websocket_end(self, flow: http.HTTPFlow):
+        mod_plugin = get_mod_plugin(flow.id)
+        mod_plugins.remove(mod_plugin)
+        del mod_plugin
+
     def websocket_message(self, flow: http.HTTPFlow):
         # 在捕获到WebSocket消息时触发
         assert flow.websocket is not None  # make type checker happy
@@ -73,25 +85,32 @@ class WebSocketAddon:
                 logger.debug(f'已发送（未解析）：{message.content}')
             return
         # 解析proto消息
-        if MOD_ENABLE: 
-            mod_plugin = mods_ls.get(flow.client_conn.id)
-            if not mod_plugin:
-                mod_plugin = mods_ls[flow.client_conn.id] = mod.mod()
-            account_id = mod_plugin.safe['account_id']
-            # 如果启用mod，就把消息丢进mod里
-            if not message.injected:
-                modify, drop, msg, inject, inject_msg = mod_plugin.main(
-                    message, liqi_proto)
-                if drop:
-                    message.drop()
-                if inject:
-                    ctx.master.commands.call(
-                        "inject.websocket", flow, True, inject_msg, False)
-                if modify:
-                    # 如果被mod修改就同步变更
-                    message.content = msg
+        mod_plugin = get_mod_plugin(flow.id)
+        account_id = mod_plugin.safe['account_id']
+        # 如果启用mod，就把消息丢进mod里
+        if not message.injected:
+            modify, drop, msg, inject, inject_msg = mod_plugin.main(
+                message, liqi_proto)
+            if drop:
+                message.drop()
+            if inject:
+                ctx.master.commands.call(
+                    "inject.websocket", flow, True, inject_msg, False)
+            if modify:
+                # 如果被mod修改就同步变更
+                message.content = msg
         try:
             result = liqi_proto.parse(message)
+            if result['method'] == '.lq.FastTest.authGame':
+                try:
+                    games.append({
+                        'gamedata': result['data'],
+                        'wsid': flow.id
+                    })
+                    account_id = mod_plugin.safe['account_id'] = result['data']['account_id']
+                    mod_plugin.LoadSettings()
+                except Exception as e:
+                    pass
         except:
             if message.from_client is False:
                 logger.error(f'[{account_id}] 接收到(error):{message.content}')
@@ -101,17 +120,24 @@ class WebSocketAddon:
             if message.from_client is False:
                 if message.injected:
                     logger.success(f'[{account_id}] 接收到(injected)：{result}')
-                elif MOD_ENABLE and modify:
+                elif modify:
                     logger.success(f'[{account_id}] 接收到(modify)：{result}')
-                elif MOD_ENABLE and drop:
+                elif drop:
                     logger.success(f'[{account_id}] 接收到(drop)：{result}')
                 else:
                     logger.info(f'[{account_id}] 接收到：{result}')
                 if HELPER_ENABLE:
                     # 如果启用helper，就把消息丢进helper里
-                    helper_plugin.main(result)
+                    if account_id == 0:
+                        try:
+                            _helper_account_id = [game for game in games if game['wsid'] == flow.id][0]['gamedata']['account_id']
+                        except:
+                            _helper_account_id = account_id
+                    else:
+                        _helper_account_id = account_id
+                    helper_plugin.main(result, _helper_account_id)
             else:
-                if MOD_ENABLE and modify:
+                if modify:
                     logger.success(f'[{account_id}] 已发送(modify)：{result}')
                 else:
                     logger.info(f'[{account_id}] 已发送：{result}')

@@ -2,56 +2,61 @@ from ruamel.yaml import YAML
 from loguru import logger
 from base64 import b64decode
 from google.protobuf.json_format import MessageToDict
-import websockets.asyncio
-import websockets.asyncio.server
-import websockets.connection
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from proto import liqi_pb2 as pb
 import asyncio
-import websockets
+import uvicorn
 import threading
-import json
+
+mod_plugins = []
+
+app = FastAPI()
+wses: dict[str, list[WebSocket]] = {}
 
 
-messagetosend = [] # 其实应该加个锁，多ws时没全读完就别pop
-websocket_established = False
+@app.get("/")
+async def http_endpoint():
+    data = [
+        {
+            'account_id': _m.safe['account_id'],
+            'nickname': _m.safe['nickname'],
+            'established_time': _m.established,
+        } for _m in mod_plugins
+    ]
+    return data
 
 
-def start_websocket_server(port):
-    async def send_on_demand(websocket: websockets.asyncio.server.ServerConnection):
-        global websocket_established
+@app.websocket("/{account_id}")
+async def websocket_endpoint(websocket: WebSocket, account_id: str):
+    await websocket.accept()
+    logger.success(f'Helper ws for {account_id} established')
+
+    global wses
+    wses.setdefault(account_id, []).append(websocket)
+
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        logger.success(f'Helper ws for {account_id} disconnected')
+
+        wses.get(account_id).remove(websocket)
+
+
+def send_message(message, account_id):
+    for ws in wses.get(str(account_id), []):
         try:
-            websocket_established = True
-            while True:
-                websocket_established = websocket.close_code == None
-                if not websocket_established:
-                    messagetosend.clear()
-                    break
-                if messagetosend:
-                    message = messagetosend.pop(0)
-                    await websocket.send(json.dumps(message, ensure_ascii=True))
-                await asyncio.sleep(0.1)
-        except websockets.exceptions.ConnectionClosed as e:
-            messagetosend.clear()
-            websocket_established = False
-
-    async def run_server():
-        try:
-            server = await websockets.serve(send_on_demand, None, port)
-            await server.wait_closed()
-        except Exception as e:
-            logger.error(f'failed to start ws: {e}')
-    asyncio.run(run_server())
-
-
-def send_message(message):
-    if websocket_established:
-        messagetosend.append(message)
+            asyncio.get_running_loop().create_task(ws.send_json(message))
+        except:
+            pass
 
 
 class helper:
-    def __init__(self):
+    def __init__(self, _mod_plugins):
         self.yaml = YAML()
         self.LoadSettings()
+        global mod_plugins
+        mod_plugins = _mod_plugins
         self.method = [
             ".lq.Lobby.oauth2Login",
             ".lq.Lobby.fetchFriendList",
@@ -83,7 +88,7 @@ class helper:
             "ActionNewCard",
             "ActionGangResultEnd"
         ]  # '.lq.ActionPrototype'中，需要发送给小助手的action
-        self.thread = threading.Thread(target=start_websocket_server, daemon=True, args=(self.settings['config']['port'],))
+        self.thread = threading.Thread(target=uvicorn.run, kwargs={'app': app, 'port': self.settings['config']['port']})
         self.thread.start()
         logger.success('已载入helper')
 
@@ -105,7 +110,7 @@ config:
         with open('./config/settings.helper.yaml', 'w', encoding='utf8') as f:
             self.yaml.dump(self.settings, f)
 
-    def main(self, result):
+    def main(self, result, account_id):
         if result['method'] in self.method:
             if result['method'] == '.lq.ActionPrototype':
                 if result['data']['name'] in self.action:
@@ -136,7 +141,7 @@ config:
             else:
                 data = result['data']
             logger.success(f'[helper] 已发送：{data}')
-            send_message(data)
+            send_message(data, account_id)
             if 'liqi' in data.keys():  # 补发立直消息
                 logger.success(f'[helper] 已发送：{data["liqi"]}')
-                send_message(data['liqi'])
+                send_message(data['liqi'], account_id)

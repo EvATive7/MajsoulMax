@@ -75,7 +75,8 @@ resource:
 
     def __init__(self):
         self.safe = {
-            "account_id": 000000000
+            "account_id": 000000000,
+            "nickname": '',
         }
         self.yaml = YAML()
         self.LoadSettings()
