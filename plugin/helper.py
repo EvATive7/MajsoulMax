@@ -1,9 +1,42 @@
 from ruamel.yaml import YAML
 from loguru import logger
 from base64 import b64decode
-import requests
 from google.protobuf.json_format import MessageToDict
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from proto import liqi_pb2 as pb
+import asyncio
+import uvicorn
+import threading
+
+mod_plugins = []
+
+app = FastAPI()
+wses: list[WebSocket] = {}
+
+
+@app.websocket("/")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    logger.success(f'Helper ws established')
+
+    global wses
+    wses.append(websocket)
+
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        logger.success(f'Helper ws disconnected')
+
+        wses.remove(websocket)
+
+
+def send_message(message):
+    for ws in wses:
+        try:
+            asyncio.get_running_loop().create_task(ws.send_json(message))
+        except:
+            pass
 
 
 class helper:
@@ -41,12 +74,14 @@ class helper:
             "ActionNewCard",
             "ActionGangResultEnd"
         ]  # '.lq.ActionPrototype'中，需要发送给小助手的action
+        self.thread = threading.Thread(target=uvicorn.run, kwargs={'app': app, 'port': self.settings['config']['port']})
+        self.thread.start()
         logger.success('已载入helper')
 
     def LoadSettings(self):
         self.settings = self.yaml.load('''\
 config:
-  api_url: 'https://localhost:12121/' # 小助手的地址
+  port: 12121
 ''')
 
         try:
@@ -92,9 +127,7 @@ config:
             else:
                 data = result['data']
             logger.success(f'[helper] 已发送：{data}')
-            requests.post(self.settings['config']
-                          ['api_url'], json=data, verify=False)
+            send_message(data)
             if 'liqi' in data.keys():  # 补发立直消息
                 logger.success(f'[helper] 已发送：{data["liqi"]}')
-                requests.post(self.settings['config']['api_url'],
-                              json=data['liqi'], verify=False)
+                send_message(data['liqi'])
