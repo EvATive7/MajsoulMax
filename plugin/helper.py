@@ -11,7 +11,7 @@ import threading
 mod_plugins = []
 
 app = FastAPI()
-wses: list[WebSocket] = {}
+wses: list[WebSocket] = []
 
 
 @app.websocket("/")
@@ -26,7 +26,7 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        logger.success(f'Helper ws disconnected')
+        logger.info(f'Helper ws disconnected')
 
         wses.remove(websocket)
 
